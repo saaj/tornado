@@ -569,7 +569,7 @@ class ExpectLog(logging.Filter):
     .. versionchanged:: 4.3
        Added the ``logged_stack`` attribute.
     """
-    def __init__(self, logger, regex, required=True):
+    def __init__(self, logger, regex, required=True, level=None):
         """Constructs an ExpectLog context manager.
 
         :param logger: Logger object (or name of logger) to watch.  Pass
@@ -578,30 +578,39 @@ class ExpectLog(logging.Filter):
             the specified logger that match this regex will be suppressed.
         :param required: If true, an exception will be raised if the end of
             the ``with`` statement is reached without matching any log entries.
+        :param level: If it's not ``None``, it will temporary replace
+            level of the logger.
         """
         if isinstance(logger, basestring_type):
             logger = logging.getLogger(logger)
         self.logger = logger
+        self.orig_level = self.logger.level
+        self.level = level
         self.regex = re.compile(regex)
+        self.formatter = logging.Formatter()
         self.required = required
-        self.matched = False
+        self.matched = []
         self.logged_stack = False
 
     def filter(self, record):
         if record.exc_info:
             self.logged_stack = True
-        message = record.getMessage()
-        if self.regex.match(message):
-            self.matched = True
+        message = self.formatter.format(record)
+        if self.regex.search(message):
+            self.matched.append(record)
             return False
         return True
 
     def __enter__(self):
         self.logger.addFilter(self)
+        if self.level:
+            self.logger.setLevel(self.level)
         return self
 
     def __exit__(self, typ, value, tb):
         self.logger.removeFilter(self)
+        if self.level:
+            self.logger.setLevel(self.orig_level)
         if not typ and self.required and not self.matched:
             raise Exception("did not get expected log message")
 
